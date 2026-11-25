@@ -5,12 +5,13 @@ namespace OneBeam.Levels.Domain;
 
 public enum GrowthStage { Seed, Seedling, Normal, Mother }
 public enum LevelRunStatus { Playing, Won, Lost }
+public enum BeamDirection { East, South, West, North }
 
 public sealed record LevelDefinition(int Number, double DurationSeconds, int AddedSeeds,
     int LightRange, double TargetVitality)
 {
-    internal bool IsValidFor(int slots) => Number > 0 && double.IsFinite(DurationSeconds) &&
-        DurationSeconds > 0 && AddedSeeds >= 0 && LightRange > 0 && LightRange <= slots &&
+    internal bool IsValidFor(int gridSize) => Number > 0 && double.IsFinite(DurationSeconds) &&
+        DurationSeconds > 0 && AddedSeeds >= 0 && LightRange > 0 && LightRange <= gridSize &&
         double.IsFinite(TargetVitality) && TargetVitality >= 0;
 }
 

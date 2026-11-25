@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 
 namespace OneBeam.Levels.Domain;
 
@@ -10,42 +11,61 @@ public sealed class LevelSimulation
     private readonly LevelPlant?[] _slots;
     private LevelPlant?[] _entryPlants;
     private int _entrySeeds;
-    private double _entryLamp;
+    private double _lampX;
+    private double _lampY;
+    private (double X, double Y) _entryLamp;
     private int _entryLampTarget;
+    private BeamDirection _entryDirection;
 
     public LevelDefinition Level { get; private set; }
     public GrowthRules Rules { get; }
+    public int GridSize { get; }
     public int SlotCount => _slots.Length;
     public IReadOnlyList<LevelPlant?> Slots { get; }
     public LevelRunStatus Status { get; private set; }
     public double ElapsedSeconds { get; private set; }
     public double RemainingSeconds => Level.DurationSeconds - ElapsedSeconds;
-    public double LampPosition { get; private set; }
+    public Vector2 LampPosition => new((float)_lampX, (float)_lampY);
     public int LampTarget { get; private set; }
-    public bool IsLampMoving => Math.Abs(LampPosition - LampTarget) > Epsilon;
+    public BeamDirection Direction { get; private set; }
+    public bool IsLampMoving => _lampX != LampTarget % GridSize || _lampY != LampTarget / GridSize;
     public int AvailableSeeds { get; private set; }
     public double Vitality => _slots.Sum(p => p == null ? 0 :
         Rules.Stages[(int)p.Stage].Vitality * (p.Wilted ? Rules.WiltMultiplier : 1));
 
-    public LevelSimulation(GrowthRules rules, LevelDefinition level, int slotCount)
+    public LevelSimulation(GrowthRules rules, LevelDefinition level, int gridSize)
     {
         ArgumentNullException.ThrowIfNull(rules);
         rules.Validate();
-        if (level == null || !level.IsValidFor(slotCount)) throw new ArgumentException("Invalid level.", nameof(level));
+        if (gridSize <= 0 || (long)gridSize * gridSize > Array.MaxLength)
+            throw new ArgumentOutOfRangeException(nameof(gridSize));
+        if (level == null || !level.IsValidFor(gridSize)) throw new ArgumentException("Invalid level.", nameof(level));
+        GridSize = gridSize;
         Level = level;
         Rules = rules with { Stages = Array.AsReadOnly(rules.Stages.ToArray()) };
-        _slots = new LevelPlant?[slotCount];
+        _slots = new LevelPlant?[gridSize * gridSize];
         Slots = Array.AsReadOnly(_slots);
-        _entryPlants = new LevelPlant?[slotCount];
+        _entryPlants = new LevelPlant?[_slots.Length];
         AvailableSeeds = _entrySeeds = level.AddedSeeds;
     }
 
-    public bool IsLit(int slot) => IsLit(slot, LampPosition);
+    private static int Snap(double position) => (int)Math.Floor(position + .5);
 
-    private bool IsLit(int slot, double position)
+    public bool IsLit(int slot) =>
+        slot >= 0 && slot < SlotCount && IsLit(slot, Snap(_lampX), Snap(_lampY));
+
+    private bool IsLit(int slot, int anchorX, int anchorY)
     {
-        int left = (int)Math.Floor(position + .5);
-        return slot >= left && slot < left + Level.LightRange && slot < SlotCount;
+        int dx = slot % GridSize - anchorX;
+        int dy = slot / GridSize - anchorY;
+        return Direction switch
+        {
+            BeamDirection.East => dy == 0 && dx >= 0 && dx < Level.LightRange,
+            BeamDirection.South => dx == 0 && dy >= 0 && dy < Level.LightRange,
+            BeamDirection.West => dy == 0 && dx <= 0 && -dx < Level.LightRange,
+            BeamDirection.North => dx == 0 && dy <= 0 && -dy < Level.LightRange,
+            _ => false
+        };
     }
 
     public bool TryPlant(int slot)
@@ -57,11 +77,44 @@ public sealed class LevelSimulation
         return true;
     }
 
-    public bool TryMoveLamp(int targetLeftSlot)
+    private (int X, int Y) ClampAnchor(int x, int y, BeamDirection direction)
     {
-        if (Status != LevelRunStatus.Playing || targetLeftSlot < 0 ||
-            targetLeftSlot > SlotCount - Level.LightRange || targetLeftSlot == LampTarget) return false;
-        LampTarget = targetLeftSlot;
+        int last = GridSize - 1;
+        int reach = Level.LightRange - 1;
+        return direction switch
+        {
+            BeamDirection.East => (Math.Clamp(x, 0, last - reach), y),
+            BeamDirection.South => (x, Math.Clamp(y, 0, last - reach)),
+            BeamDirection.West => (Math.Clamp(x, reach, last), y),
+            BeamDirection.North => (x, Math.Clamp(y, reach, last)),
+            _ => throw new ArgumentOutOfRangeException(nameof(direction))
+        };
+    }
+
+    public int ClampLampTarget(int slot)
+    {
+        if (slot < 0 || slot >= SlotCount) return -1;
+        var anchor = ClampAnchor(slot % GridSize, slot / GridSize, Direction);
+        return anchor.X + anchor.Y * GridSize;
+    }
+
+    public bool TryMoveLamp(int target)
+    {
+        if (Status != LevelRunStatus.Playing || target < 0 || ClampLampTarget(target) != target ||
+            target == LampTarget) return false;
+        LampTarget = target;
+        return true;
+    }
+
+    public bool TryRotateLamp(int quarterTurns)
+    {
+        if (Status != LevelRunStatus.Playing || quarterTurns is not (-1 or 1)) return false;
+        var direction = (BeamDirection)(((int)Direction + quarterTurns + 4) % 4);
+        var current = (X: Snap(_lampX), Y: Snap(_lampY));
+        var target = (X: LampTarget % GridSize, Y: LampTarget / GridSize);
+        if (ClampAnchor(current.X, current.Y, direction) != current ||
+            ClampAnchor(target.X, target.Y, direction) != target) return false;
+        Direction = direction;
         return true;
     }
 
@@ -74,24 +127,22 @@ public sealed class LevelSimulation
         while (remaining > 0)
         {
             double slice = remaining;
-            double next = LampPosition;
-            if (IsLampMoving)
-            {
-                int direction = Math.Sign(LampTarget - LampPosition);
-                // Split exactly where the moving beam changes the set of illuminated slots.
-                double boundary = direction > 0 ? Math.Floor(LampPosition + .5) + .5 :
-                    Math.Ceiling(LampPosition - .5) - .5;
-                double destination = direction > 0 ? Math.Min(boundary, LampTarget) : Math.Max(boundary, LampTarget);
-                double travel = Math.Abs(destination - LampPosition) * Rules.MoveSecondsPerSlot;
-                slice = Math.Min(remaining, travel);
-                next = slice == travel ? destination : LampPosition + direction * slice / Rules.MoveSecondsPerSlot;
-            }
+            double nextX = _lampX;
+            double nextY = _lampY;
+            int targetX = LampTarget % GridSize;
+            int targetY = LampTarget / GridSize;
+            if (_lampX != targetX)
+                nextX = MoveOneInterval(_lampX, targetX, ref slice);
+            else if (_lampY != targetY)
+                nextY = MoveOneInterval(_lampY, targetY, ref slice);
 
-            double sample = (LampPosition + next) / 2;
+            int sampleX = Snap((_lampX + nextX) / 2);
+            int sampleY = Snap((_lampY + nextY) / 2);
             for (int i = 0; i < SlotCount; i++)
                 if (_slots[i] is { } plant)
-                    _slots[i] = AdvancePlant(plant, IsLit(i, sample), slice);
-            LampPosition = next;
+                    _slots[i] = AdvancePlant(plant, IsLit(i, sampleX, sampleY), slice);
+            _lampX = nextX;
+            _lampY = nextY;
             remaining -= slice;
         }
         ElapsedSeconds = end;
@@ -100,6 +151,19 @@ public sealed class LevelSimulation
             ElapsedSeconds = Level.DurationSeconds;
             Status = Vitality >= Level.TargetVitality ? LevelRunStatus.Won : LevelRunStatus.Lost;
         }
+    }
+
+    private double MoveOneInterval(double position, int target, ref double seconds)
+    {
+        int sign = Math.Sign(target - position);
+        // Each interval ends at the destination or at the next change in illuminated cells.
+        double boundary = sign > 0 ? Math.Floor(position + .5) + .5 : Math.Ceiling(position - .5) - .5;
+        double destination = sign > 0 ? Math.Min(boundary, target) : Math.Max(boundary, target);
+        double travel = Math.Abs(destination - position) * Rules.MoveSecondsPerSlot;
+        if (seconds < travel)
+            return position + sign * seconds / Rules.MoveSecondsPerSlot;
+        seconds = travel;
+        return destination;
     }
 
     private LevelPlant? AdvancePlant(LevelPlant plant, bool lit, double seconds)
@@ -147,14 +211,18 @@ public sealed class LevelSimulation
     public bool TryStartNext(LevelDefinition next)
     {
         if (Status != LevelRunStatus.Won || next == null || next.Number != Level.Number + 1 ||
-            !next.IsValidFor(SlotCount)) return false;
+            !next.IsValidFor(GridSize)) return false;
         Level = next;
         for (int i = 0; i < SlotCount; i++)
             if (_slots[i] is { } p) _slots[i] = p with { Darkness = 0, Wilted = false };
         _entryPlants = (LevelPlant?[])_slots.Clone();
         _entrySeeds = AvailableSeeds + next.AddedSeeds;
-        _entryLamp = Math.Min(LampPosition, SlotCount - next.LightRange);
-        _entryLampTarget = Math.Min(LampTarget, SlotCount - next.LightRange);
+        int x = Snap(_lampX);
+        int y = Snap(_lampY);
+        var anchor = ClampAnchor(x, y, Direction);
+        _entryLamp = (anchor.X == x ? _lampX : anchor.X, anchor.Y == y ? _lampY : anchor.Y);
+        _entryLampTarget = ClampLampTarget(LampTarget);
+        _entryDirection = Direction;
         RestartCurrent();
         return true;
     }
@@ -163,8 +231,9 @@ public sealed class LevelSimulation
     {
         Array.Copy(_entryPlants, _slots, SlotCount);
         AvailableSeeds = _entrySeeds;
-        LampPosition = _entryLamp;
+        (_lampX, _lampY) = _entryLamp;
         LampTarget = _entryLampTarget;
+        Direction = _entryDirection;
         ElapsedSeconds = 0;
         Status = LevelRunStatus.Playing;
     }

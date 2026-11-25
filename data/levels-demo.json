@@ -1,5 +1,5 @@
 {
-  "slotCount": 6,
+  "gridSize": 4,
   "rules": {
     "stages": [
       { "growthToNext": 30, "darkPerSecond": 0.50, "wiltAt": 63, "dieAt": 90, "vitality": 0 },

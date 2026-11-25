@@ -27,7 +27,7 @@ public partial class LevelsDemo : Control
     public override void _Ready()
     {
         _config = LevelDemoConfig.Load();
-        _game = new LevelSimulation(_config.Rules, _config.Levels[0], _config.SlotCount);
+        _game = new LevelSimulation(_config.Rules, _config.Levels[0], _config.GridSize);
         _dish = GetNode<LevelDish>("Dish");
         _level = GetNode<Label>("Level");
         _timer = GetNode<Label>("Timer");
@@ -108,10 +108,29 @@ public partial class LevelsDemo : Control
     {
         if (_game.Status != LevelRunStatus.Playing || _paused ||
             input is not InputEventKey { Pressed: true, Echo: false } key) return;
-        // This demo has one row. Either pair steps the projected light left or right.
-        int direction = key.Keycode switch { Key.A or Key.Q => -1, Key.D or Key.E => 1, _ => 0 };
-        if (direction == 0) return;
-        MoveLamp(Math.Clamp(_game.LampTarget + direction, 0, _game.SlotCount - _game.Level.LightRange));
+        Key control = key.PhysicalKeycode == Key.None ? key.Keycode : key.PhysicalKeycode;
+        if (control is Key.Q or Key.E)
+        {
+            bool turned = _game.TryRotateLamp(control == Key.E ? 1 : -1);
+            Notify(turned ? "已转动灯光方向。" : "田边空间不足，先把灯移开再转向。");
+            Refresh();
+        }
+        else
+        {
+            Vector2I offset = control switch
+            {
+                Key.W => Vector2I.Up,
+                Key.A => Vector2I.Left,
+                Key.S => Vector2I.Down,
+                Key.D => Vector2I.Right,
+                _ => Vector2I.Zero
+            };
+            if (offset == Vector2I.Zero) return;
+            int n = _game.GridSize;
+            int column = Math.Clamp(_game.LampTarget % n + offset.X, 0, n - 1);
+            int row = Math.Clamp(_game.LampTarget / n + offset.Y, 0, n - 1);
+            MoveLamp(row * n + column);
+        }
         GetViewport().SetInputAsHandled();
     }
 
@@ -126,7 +145,7 @@ public partial class LevelsDemo : Control
             {
                 _readyToStart = false;
                 _sowing = _game.AvailableSeeds > 0;
-                Notify($"已在 {slot + 1} 号槽播种。");
+                Notify($"已在{PlotLabel(slot)}播种。");
             }
             else
                 Notify("没有可用种子。点击已有植株可以查看状态。");
@@ -141,9 +160,10 @@ public partial class LevelsDemo : Control
 
     private void MoveLamp(int target)
     {
+        target = _game.ClampLampTarget(target);
         if (!_paused && _game.TryMoveLamp(target))
         {
-            Notify($"灯头移向第 {target + 1} 至 {target + _game.Level.LightRange} 槽。");
+            Notify($"灯移向{PlotLabel(target)}。");
             Refresh();
         }
     }
@@ -182,8 +202,8 @@ public partial class LevelsDemo : Control
         else if (_messageTime > 0) _hint.Text = _message;
         else if (_paused) _hint.Text = "培养已暂停。可点选植株观察，再点击「继续」。";
         else if (_sowing) _hint.Text = "把鼠标移入空槽预览，点击播种。";
-        else if (_readyToStart) _hint.Text = "点右上角的种子，再点空槽播种。播下第一颗种子开始计时。";
-        else _hint.Text = $"拖灯或按 A/D、Q/E 调光。每格 {_game.Rules.MoveSecondsPerSlot:0.#} 秒，同时照亮 {_game.Level.LightRange} 槽。";
+        else if (_readyToStart) _hint.Text = "点击种子，再点空地播种。第一颗种子落地开始计时。";
+        else _hint.Text = $"拖灯或按 WASD 移灯，Q/E 转向。每格 {_game.Rules.MoveSecondsPerSlot:0.#} 秒。";
     }
 
     private void RefreshSelection()
@@ -191,7 +211,7 @@ public partial class LevelsDemo : Control
         var plant = _selected < 0 ? null : _game.Slots[_selected];
         if (plant == null)
         {
-            _detail.Text = _selected < 0 ? "培养槽" : $"{_selected + 1} 号槽　·　空槽";
+            _detail.Text = _selected < 0 ? $"{_game.GridSize} × {_game.GridSize} 农田" : $"{PlotLabel(_selected)}　·　空地";
             var stages = _game.Rules.Stages;
             _status.Text = _selected < 0
                 ? $"幼苗 {stages[(int)GrowthStage.Seedling].Vitality:0}　常规 {stages[(int)GrowthStage.Normal].Vitality:0}　母体 {stages[(int)GrowthStage.Mother].Vitality:0} 生机"
@@ -204,7 +224,7 @@ public partial class LevelsDemo : Control
         }
         var rule = _game.Rules.Stages[(int)plant.Stage];
         string state = plant.Wilted ? "萎蔫" : _game.IsLit(_selected) ? "受光" : "背光";
-        _detail.Text = $"{_selected + 1} 号槽　·　{LevelDish.StageName(plant.Stage)}";
+        _detail.Text = $"{PlotLabel(_selected)}　·　{LevelDish.StageName(plant.Stage)}";
         _status.Text = $"{state}　·　生机 {rule.Vitality * (plant.Wilted ? _game.Rules.WiltMultiplier : 1):0.#}";
         bool mother = plant.Stage == GrowthStage.Mother;
         double goal = rule.GrowthToNext ?? (_game.Rules.FirstSeedGrowth + plant.SeedsProduced * _game.Rules.SeedGrowthIncrement);
@@ -213,6 +233,9 @@ public partial class LevelsDemo : Control
         SetBar(_growthFill, plant.Growth / goal);
         SetBar(_darkFill, plant.Darkness / rule.DieAt);
     }
+
+    private string PlotLabel(int slot) =>
+        $"第 {slot / _game.GridSize + 1} 行 {slot % _game.GridSize + 1} 列";
 
     private static void SetBar(Control fill, double fraction)
     {

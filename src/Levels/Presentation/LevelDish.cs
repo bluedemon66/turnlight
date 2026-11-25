@@ -8,20 +8,31 @@ public partial class LevelDish : Control
 {
     public event Action<int>? SlotPressed;
     public event Action<int>? LampRequested;
+
     private LevelSimulation? _simulation;
     private int _selected = -1;
     private int _hover = -1;
     private bool _dragging;
     private bool _sowing;
     private int _lastTarget = -1;
-    private const float TrackY = 39;
-    private const float SoilY = 206;
-    private const float Inset = 28;
 
-    private float CellWidth => (Size.X - Inset * 2) / (_simulation?.SlotCount ?? 1);
-    public Vector2 CellCenter(int slot) => new(Inset + (slot + .5f) * CellWidth, SoilY - 21);
-    private float LampX(double left) => Inset + ((float)left + (_simulation?.Level.LightRange ?? 1) / 2f) * CellWidth;
-    public Vector2 RailPoint(int leftSlot) => new(LampX(leftSlot), TrackY);
+    private int GridSize => _simulation?.GridSize ?? 1;
+    private float HalfWidth => Size.X * .35f / GridSize;
+    private float HalfHeight => (Size.Y - 94f) * .5f / GridSize;
+    private Vector2 FarCorner => new(Size.X * .5f, 60);
+    private static readonly Vector2 BedDepth = new(0, 13);
+
+    // Increasing the column goes down-right, increasing the row goes down-left.
+    private Vector2 Project(float column, float row) => FarCorner +
+        new Vector2((column - row) * HalfWidth, (column + row) * HalfHeight);
+
+    public Vector2 CellCenter(int slot) => Project(slot % GridSize + .5f, slot / GridSize + .5f);
+
+    public Vector2 LampHandle()
+    {
+        if (_simulation is not { } sim) return new(Size.X * .5f, 23);
+        return new(Project(sim.LampPosition.X + .5f, sim.LampPosition.Y + .5f).X, 23);
+    }
 
     public void Render(LevelSimulation simulation, int selected, bool sowing)
     {
@@ -39,23 +50,24 @@ public partial class LevelDish : Control
     public void ResetInput()
     {
         _dragging = false;
-        _lastTarget = -1;
-        _hover = -1;
+        _lastTarget = _hover = -1;
     }
 
-    private int SlotAt(Vector2 position)
+    private int SlotAt(Vector2 local)
     {
-        if (_simulation == null || position.Y < 71 || position.Y > Size.Y - 9 ||
-            position.X < Inset || position.X >= Size.X - Inset) return -1;
-        return Mathf.FloorToInt((position.X - Inset) / CellWidth);
+        var plane = local - FarCorner;
+        float x = plane.X / HalfWidth;
+        float y = plane.Y / HalfHeight;
+        int col = Mathf.FloorToInt((y + x) * .5f);
+        int row = Mathf.FloorToInt((y - x) * .5f);
+        return col >= 0 && col < GridSize && row >= 0 && row < GridSize ? row * GridSize + col : -1;
     }
 
-    private void TargetLampAt(float localX)
+    private void TargetAt(int slot)
     {
-        if (_simulation == null) return;
-        int target = Mathf.Clamp(Mathf.RoundToInt((localX - Inset) / CellWidth - _simulation.Level.LightRange / 2f),
-            0, _simulation.SlotCount - _simulation.Level.LightRange);
-        if (target == _lastTarget) return;
+        if (_simulation == null || slot < 0) return;
+        int target = _simulation.ClampLampTarget(slot);
+        if (target < 0 || target == _lastTarget) return;
         _lastTarget = target;
         LampRequested?.Invoke(target);
     }
@@ -65,144 +77,215 @@ public partial class LevelDish : Control
         if (_simulation == null || _simulation.Status != LevelRunStatus.Playing) return;
         if (input is InputEventMouseMotion motion)
         {
-            if (_dragging) TargetLampAt(motion.Position.X);
             _hover = SlotAt(motion.Position);
+            if (_dragging) TargetAt(_hover);
             QueueRedraw();
             return;
         }
-        if (input is not InputEventMouseButton { ButtonIndex: MouseButton.Left } button) return;
+        if (input is not InputEventMouseButton button) return;
+        int slot = SlotAt(button.Position);
+        if (button.ButtonIndex == MouseButton.Right && button.Pressed && slot >= 0)
+        {
+            _lastTarget = -1;
+            TargetAt(slot);
+            AcceptEvent();
+        }
+        if (button.ButtonIndex != MouseButton.Left) return;
         if (!button.Pressed)
         {
-            _dragging = false;
+            if (_dragging)
+            {
+                TargetAt(slot);
+                _dragging = false;
+                AcceptEvent();
+                QueueRedraw();
+            }
             return;
         }
-        if (button.Position.Y < 71)
+        if (new Rect2(LampHandle() - new Vector2(30, 14), new Vector2(60, 28)).HasPoint(button.Position))
         {
             _lastTarget = -1;
             _dragging = true;
-            TargetLampAt(button.Position.X);
+            AcceptEvent();
         }
-        else if (SlotAt(button.Position) is var slot && slot >= 0)
+        else if (slot >= 0)
+        {
             SlotPressed?.Invoke(slot);
-        AcceptEvent();
+            AcceptEvent();
+        }
     }
 
     public override void _Draw()
     {
         if (_simulation is not { } sim) return;
-        Rect2 bounds = new(Vector2.Zero, Size);
-        DrawRect(bounds, new Color("182f30"));
-        DrawRect(bounds.Grow(-1), new Color("57756a"), false, 1);
-        DrawRect(bounds.Grow(-5), new Color("324c44"), false, 1);
-        DrawChamber();
-
-        float center = LampX(sim.LampPosition);
-        float tilt = sim.IsLampMoving ? Mathf.Clamp((float)(sim.LampTarget - sim.LampPosition) * 9, -17, 17) : 0;
-        float lamp = center - tilt;
-        float lampHalf = Mathf.Min(42, CellWidth * .3f);
-        float lightEdge = CellWidth * sim.Level.LightRange / 2f;
-        DrawPolygon(new[] { new Vector2(lamp - lampHalf, 56), new(lamp + lampHalf, 56),
-                new(center + lightEdge, SoilY + 12), new(center - lightEdge, SoilY + 12) },
-            new[] { new Color("ffe7a656"), new Color("ffe7a656"), new Color("efdc9523"), new Color("efdc9523") });
-        DrawSetTransform(new(center, SoilY + 6), 0, new Vector2(1, 11 / lightEdge));
-        DrawCircle(Vector2.Zero, lightEdge, new Color("f2dda527"), true, -1, true);
+        Rect2 viewport = new(Vector2.Zero, Size);
+        DrawRect(viewport, new Color("172b2c"));
+        DrawRect(viewport.Grow(-.8f), new Color("557067"), false, 1);
+        DrawRect(viewport.Grow(-5), new Color("314947"), false, 1);
+        DrawSetTransform(new(Size.X * .5f, FarCorner.Y + (GridSize + .7f) * HalfHeight), 0,
+            new Vector2(1, .28f));
+        DrawCircle(Vector2.Zero, GridSize * HalfWidth * .97f, new Color("0e242448"), true, -1, true);
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
-        DrawLine(new(Inset, TrackY - 1), new(Size.X - Inset, TrackY - 1), new Color("759086"), 4, true);
-        DrawLine(new(Inset, TrackY + 2), new(Size.X - Inset, TrackY + 2), new Color("364c48"), 2, true);
-        for (int i = 0; i <= sim.SlotCount - sim.Level.LightRange; i++)
+        DrawBed(sim);
+        DrawLight(sim);
+        // Every plot surface is already painted; stems in front overlap those behind.
+        for (int depth = 0; depth <= 2 * (GridSize - 1); depth++)
         {
-            Vector2 point = RailPoint(i);
-            DrawLine(point - Vector2.Down * 5, point + Vector2.Down * 5, new Color("a1b4a5"), 1, true);
-        }
-        if (sim.IsLampMoving)
-        {
-            var target = RailPoint(sim.LampTarget);
-            DrawArc(target, 9, 0, Mathf.Tau, 22, new Color("efce8e"), 1.4f, true);
-            DrawDashedLine(new(lamp, TrackY - 11), target - new Vector2(0, 11), new Color("dcc794"), 1, 5);
-        }
-        DrawRect(new Rect2(lamp - lampHalf, TrackY - 9, lampHalf * 2, 18), new Color("9d8565"));
-        DrawRect(new Rect2(lamp - lampHalf + 2, TrackY - 7, lampHalf * 2 - 4, 12), new Color("34423d"));
-        for (int i = -2; i <= 2; i++)
-            DrawLine(new(lamp + i * 5, TrackY - 3), new(lamp + i * 5, TrackY + 4), new Color("c2b78e"), 1.5f);
-        DrawRect(new Rect2(lamp - lampHalf + 3, TrackY + 8, lampHalf * 2 - 6, 4), new Color("ffe4a0"));
-        var font = GetThemeDefaultFont();
-        for (int i = 0; i < sim.SlotCount; i++)
-            DrawSlot(sim, i, font);
-    }
-
-    private void DrawChamber()
-    {
-        // Glass fasteners, mounting gauge and the recessed bench identify the playable plane.
-        var metal = new Color("769184");
-        foreach (float x in new[] { 13f, Size.X - 13 })
-        {
-            foreach (float y in new[] { 13f, Size.Y - 13 })
+            for (int row = Math.Max(0, depth - GridSize + 1); row <= Math.Min(depth, GridSize - 1); row++)
             {
-                DrawCircle(new(x, y), 3, new Color("34524e"), true, -1, true);
-                DrawLine(new(x - 1, y + 1), new(x + 1, y - 1), metal, 1, true);
+                int slot = row * GridSize + depth - row;
+                if (sim.Slots[slot] is { } plant)
+                    DrawSpecimen(CellCenter(slot), plant, sim.IsLit(slot), slot);
             }
         }
-        for (int i = 0; i <= 40; i++)
-        {
-            float x = Inset + (Size.X - 2 * Inset) * i / 40;
-            float h = i % 5 == 0 ? 5 : 2;
-            DrawLine(new(x, TrackY - 11 - h), new(x, TrackY - 11), new Color("9db5a747"), 1);
-        }
-        DrawPolygon(new[] { new Vector2(Inset + 14, SoilY - 14), new(Size.X - Inset - 14, SoilY - 14),
-                new(Size.X - Inset + 1, SoilY + 7), new(Inset - 1, SoilY + 7) },
-            new[] { new Color("29433d"), new Color("29433d"), new Color("203a34"), new Color("203a34") });
-        DrawLine(new(Inset + 14, SoilY - 14), new(Size.X - Inset - 14, SoilY - 14), new Color("6e867549"), 1);
-        for (int i = 0; i < 3; i++)
-        {
-            float x = Inset + 32 + i * 10;
-            DrawLine(new(x, 70), new(x + 32, 54), new Color("bbd6c716"), 1, true);
-        }
+        DrawLabels(sim);
     }
 
-    private void DrawSlot(LevelSimulation sim, int index, Font font)
+    private Vector2[] Tile(int col, int row, float inset)
     {
-        bool lit = sim.IsLit(index);
-        var plant = sim.Slots[index];
-        float x = CellCenter(index).X;
-        float width = CellWidth - 6;
-        Color edge = index == _selected ? new Color("e6d49e") :
-            index == _hover ? new Color("9ebba5") : new Color("57776e");
-        var plate = new Rect2(x - width / 2, SoilY + 6, width, 39);
-        DrawRect(plate, lit ? new Color("354e3f") : new Color("2a4240"));
-        DrawRect(plate, edge, false, index == _selected ? 2 : 1);
-        DrawLine(new(x - width / 2 + 3, SoilY + 6), new(x + width / 2 - 3, SoilY + 6),
-            lit ? new Color("e7cb83") : new Color("658477"), 3, true);
-        for (int i = 1; i <= 4; i++)
-        {
-            float grainX = x - width / 2 + width * i / 5f;
-            DrawLine(new(grainX - 2, SoilY + 13 + i % 3), new(grainX + 2, SoilY + 13 + i % 3),
-                new Color("b5c4a547"), 1);
-        }
-        if (index == _selected)
-            DrawArc(new(x, SoilY - 1), Mathf.Min(21, width * .3f), .2f, Mathf.Pi - .2f, 22,
-                new Color("e6d49e"), 1.5f, true);
-        if (plant == null && _sowing && index == _hover)
-        {
-            DrawArc(new(x, SoilY - 5), 12, 0, Mathf.Tau, 22, new Color("e1d5a1"), 1, true);
-            DrawColoredPolygon(new[] { new Vector2(x - 5, SoilY - 4), new(x - 2, SoilY - 10),
-                new(x + 5, SoilY - 9), new(x + 6, SoilY - 4), new(x, SoilY - 2) }, new Color("dcc88ccc"));
-        }
-        else if (plant == null)
-        {
-            var faint = lit ? new Color("b7bc90") : new Color("78988a");
-            DrawLine(new(x-4, SoilY-5), new(x+4, SoilY-5), faint, 1);
-            DrawLine(new(x, SoilY-9), new(x, SoilY-1), faint, 1);
-        }
-        else DrawSpecimen(new(x, SoilY), plant, lit, index);
-        string name = plant == null ? "空槽" : StageName(plant.Stage);
-        if (plant?.Wilted == true) name = "萎蔫";
-        DrawString(font, new(x - width / 2, SoilY + 35), $"{index + 1}  {name}",
-            HorizontalAlignment.Center, width, CellWidth < 90 ? 13 : 16, new Color("e1e8d5"));
-        string light = lit ? "受光" : "背光";
-        DrawString(font, new(x - width / 2, SoilY + 64), light,
-            HorizontalAlignment.Center, width, 13, lit ? new Color("e0c889") : new Color("9db2a8"));
+        return new[] { Project(col + inset, row + inset), Project(col + 1 - inset, row + inset),
+            Project(col + 1 - inset, row + 1 - inset), Project(col + inset, row + 1 - inset) };
     }
 
+    private void DrawBed(LevelSimulation sim)
+    {
+        var back = FarCorner;
+        var right = Project(GridSize, 0);
+        var front = Project(GridSize, GridSize);
+        var left = Project(0, GridSize);
+        var shadow = new Vector2(0, 19);
+        DrawColoredPolygon(new[] { back + shadow, right + shadow, front + shadow, left + shadow }, new Color("0c201f"));
+        DrawColoredPolygon(new[] { left, front, front + BedDepth, left + BedDepth }, new Color("635447"));
+        DrawColoredPolygon(new[] { front, right, right + BedDepth, front + BedDepth }, new Color("443d34"));
+        DrawPolyline(new[] { left + BedDepth * .66f, front + BedDepth * .66f, right + BedDepth * .66f },
+            new Color("877054"), 1.4f, true);
+        DrawPolyline(new[] { left + BedDepth, front + BedDepth, right + BedDepth }, new Color("749183"), 1, true);
+        for (int i = 1; i < GridSize; i++)
+        {
+            Vector2 a = Project(i, GridSize), b = Project(GridSize, i);
+            DrawLine(a, a + BedDepth, new Color("2f423a"), 1);
+            DrawLine(b, b + BedDepth, new Color("233e35"), 1);
+        }
+        DrawColoredPolygon(new[] { back, right, front, left }, new Color("383d32"));
+        var border = new Color("a1a38a");
+        DrawPolyline(new[] { back, right, front, left, back }, border, 2, true);
+        for (int i = 0; i < sim.SlotCount; i++) DrawSoil(sim, i);
+    }
+
+    private void DrawSoil(LevelSimulation sim, int slot)
+    {
+        int row = slot / GridSize, col = slot % GridSize;
+        bool lit = sim.IsLit(slot);
+        var fill = lit ? new Color("9a7751") : (row + col) % 2 == 0 ? new Color("5e503d") : new Color("655641");
+        var tile = Tile(col, row, .02f);
+        DrawColoredPolygon(tile, fill);
+        // Shallow furrows lead the eye along the column axis.
+        var groove = lit ? new Color("71573c") : new Color("453e32");
+        var ridge = lit ? new Color("c4a06b") : new Color("837353");
+        for (int f = 0; f < 3; f++)
+        {
+            float z = .22f + f * .27f;
+            var a = Project(col + .12f, row + z);
+            var b = Project(col + .86f, row + z);
+            var mid = Project(col + .48f, row + z + .015f);
+            DrawPolyline(new[] { a, mid, b }, groove, 2, true);
+            DrawPolyline(new[] { a + Vector2.Down, mid + Vector2.Down, b + Vector2.Down }, ridge, 1, true);
+        }
+        // Fixed seed-like grain on the soil avoids noise flickering when the lamp moves.
+        for (int grain = 0; grain < 12; grain++)
+        {
+            float u = .10f + ((slot * 31 + grain * 23) % 83) * .009f;
+            float v = .10f + ((grain * grain * 13 + slot * 19 + grain) % 79) * .01f;
+            var dot = Project(col + u, row + v);
+            DrawLine(dot, dot + new Vector2(grain % 3 + 1, -.5f),
+                grain % 3 == 0 ? ridge : groove, 1, true);
+        }
+        Color outline = slot == _selected ? new Color("e9f3d6") :
+            slot == _hover ? new Color("b1e3c0") : lit ? new Color("f0ce85") : new Color("939277");
+        DrawPolyline(new[] { tile[0], tile[1], tile[2], tile[3], tile[0] }, outline,
+            slot == _selected || slot == _hover ? 2.3f : 1, true);
+        var center = CellCenter(slot);
+        if (sim.Slots[slot] != null)
+        {
+            DrawSetTransform(center, 0, new Vector2(1, .32f));
+            DrawCircle(Vector2.Zero, Math.Min(14, HalfWidth / 3), new Color("1d302b9c"), true, -1, true);
+            DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+        }
+        else if (_sowing && slot == _hover && !_dragging)
+        {
+            DrawArc(center, 10, 0, Mathf.Tau, 20, new Color("e5f1cf"), 1.3f, true);
+            DrawColoredPolygon(new[] { center + new Vector2(-4, 2), center + new Vector2(-2, -5),
+                center + new Vector2(4, -6), center + new Vector2(6, 0) }, new Color("f1d49b"));
+        }
+    }
+
+    private void DrawLight(LevelSimulation sim)
+    {
+        var head = LampHandle();
+        var near = Project(sim.LampPosition.X + .5f, sim.LampPosition.Y + .5f);
+        var forward = sim.Direction switch
+        {
+            BeamDirection.East => new Vector2(HalfWidth, HalfHeight),
+            BeamDirection.South => new Vector2(-HalfWidth, HalfHeight),
+            BeamDirection.West => new Vector2(-HalfWidth, -HalfHeight),
+            _ => new Vector2(HalfWidth, -HalfHeight)
+        };
+        var center = near + forward * (sim.Level.LightRange - 1) / 2f;
+        float lowerRadius = HalfWidth * .45f;
+        DrawPolygon(new[] { head + new Vector2(-14, 7), head + new Vector2(14, 7),
+            center + new Vector2(lowerRadius, 1), center - new Vector2(lowerRadius, 0) },
+            new[] { new Color("f6db9150"), new Color("f6db9150"), new Color("fff3af04"), new Color("fff3af04") });
+        // A direction arrow at the anchor disambiguates the illuminated pair.
+        var axis = forward.Normalized();
+        var side = axis.Orthogonal();
+        var arrow = near + axis * Math.Min(21, HalfWidth * .34f);
+        DrawColoredPolygon(new[] { arrow + axis * 5, arrow - axis * 3 + side * 3, arrow - axis * 3 - side * 3 },
+            new Color("fff0a8"));
+        if (sim.IsLampMoving || _dragging)
+        {
+            var target = CellCenter(sim.LampTarget);
+            DrawArc(target, 8, 0, Mathf.Tau, 20, new Color("f5db91"), 1.3f, true);
+        }
+        DrawLine(new(58, 12), new(Size.X - 58, 12), new Color("536e68"), 2, true);
+        DrawLine(new(head.X, 12), head, new Color("a7baba"), 2, true);
+        DrawColoredPolygon(new[] { head + new Vector2(-23, -8), head + new Vector2(15, -8),
+            head + new Vector2(23, -4), head + new Vector2(-17, -4) }, new Color("bba67c"));
+        DrawRect(new Rect2(head - new Vector2(23, 4), new Vector2(46, 10)), new Color("79816f"));
+        DrawRect(new Rect2(head - new Vector2(20, 3), new Vector2(40, 6)), new Color("3b4c44"));
+        for (int i = -2; i <= 2; i++) DrawLine(head + new Vector2(i * 5, -2), head + new Vector2(i * 5, 2), new Color("cca96e"), 1);
+        DrawRect(new Rect2(head + new Vector2(-18, 6), new Vector2(36, 3)), new Color("f8d994"));
+    }
+
+    private void DrawLabels(LevelSimulation sim)
+    {
+        var font = GetThemeDefaultFont();
+        var muted = new Color("a1b7a8");
+        for (int i = 0; i < GridSize; i++)
+        {
+            var row = Project(0, i + .5f) + new Vector2(-39, -3);
+            var col = Project(i + .5f, 0) + new Vector2(7, -3);
+            DrawString(font, row, $"{i + 1}行", HorizontalAlignment.Right, 32, 13, muted);
+            DrawString(font, col, $"{i + 1}列", HorizontalAlignment.Left, 32, 13, muted);
+        }
+        float x = Size.X - 105, y = Size.Y - 52;
+        DrawRect(new Rect2(x, y - 9, 12, 8), new Color("dbbb7a"));
+        DrawString(font, new(x + 20, y), "受光", HorizontalAlignment.Left, -1, 14, new Color("e9d6a0"));
+        DrawRect(new Rect2(x, y + 12, 12, 8), new Color("685843"));
+        DrawString(font, new(x + 20, y + 20), "背光", HorizontalAlignment.Left, -1, 14, muted);
+        DrawAxes(font);
+    }
+
+    private void DrawAxes(Font font)
+    {
+        var p = new Vector2(73, Size.Y - 58);
+        foreach (var item in new[] { (new Vector2(22, 10), "D"), (new Vector2(-22, 10), "S"),
+            (new Vector2(-22, -10), "A"), (new Vector2(22, -10), "W") })
+        {
+            DrawLine(p, p + item.Item1 * .72f, new Color("7f9c8c"), 1, true);
+            DrawString(font, p + item.Item1 - new Vector2(7, -4), item.Item2,
+                HorizontalAlignment.Center, 17, 13, new Color("b8cbb9"));
+        }
+    }
     public static string StageName(GrowthStage stage) => stage switch
     {
         GrowthStage.Seed => "种子",
@@ -227,7 +310,7 @@ public partial class LevelDish : Control
             DrawLine(root + new Vector2(-3, -4), root + new Vector2(2, -7), new Color("f0dbab"), 1, true);
             return;
         }
-        float scale = Mathf.Min(1f, CellWidth / 82f);
+        float scale = Mathf.Min(.72f, HalfHeight / 52f);
         bool grown = plant.Stage != GrowthStage.Seedling;
         DrawSetTransform(root, 0, Vector2.One * scale);
         int stems = grown ? 3 : 1;

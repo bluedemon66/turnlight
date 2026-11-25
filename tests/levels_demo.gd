@@ -12,6 +12,8 @@ var result: Label
 var next: Button
 var capture_dir: String
 
+const GRID_SIZE := 4
+
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -33,27 +35,34 @@ func _run() -> void:
 	next = game.get_node("Next")
 	if not _check(clock.text == "03:00" and score.text == "0 / 150" and stash.text.ends_with("×3"), "level 1 setup matches the workbook"):
 		return
+	if not _check(game.get_node("Detail").text == "4 × 4 农田", "demo opens as a square field"):
+		return
 	await _capture("01-level-1-start.png")
 	_click_control(stash)
-	for slot in [0, 1, 2]:
+	for slot in [0, 1, GRID_SIZE]:
 		_click(_dish_point("CellCenter", slot))
 	if not _check(stash.text.ends_with("×0"), "plant three seeds with the inventory and empty slots"):
 		return
 	_click_control(game.get_node("Speed"))
 	if not await _until_elapsed(45):
 		return
-	_drag_lamp(0, 1)
+	_key(KEY_E)
+	var observed_light := game.get_node("Status") as Label
+	if not _check(observed_light.text.begins_with("受光"), "turning the beam south lights the second row"):
+		return
 	if not await _until_elapsed(48):
 		return
 	await _capture("02-level-1-shift-light.png")
 	if not await _until_elapsed(100):
 		return
-	_drag_lamp(1, 0)
+	_key(KEY_Q)
+	if not _check(observed_light.text.begins_with("背光"), "turning the beam east lights along the first row again"):
+		return
 	if not await _until_elapsed(145):
 		return
 	if not _check(score.text == "150 / 150" and not next.visible and not result.visible, "reaching 150 early keeps the clock running"):
 		return
-	_drag_lamp(0, 1)
+	_key(KEY_E)
 	if not await _until_elapsed(180):
 		return
 	if not _check(next.visible and result.visible and score.text == "150 / 150", "level 1 passes at the 180-second cutoff"):
@@ -69,21 +78,34 @@ func _run() -> void:
 		return
 	await _capture("04-level-2-start.png")
 	_click_control(stash)
-	_click(_dish_point("CellCenter", 3))
-	_drag_lamp(1, 2)
+	_click(_dish_point("CellCenter", GRID_SIZE + 1))
+	_key(KEY_D)
 	_click_control(game.get_node("Speed"))
 	if not await _until_elapsed(54):
 		return
-	_drag_lamp(2, 0)
+	_drag_lamp(0)
 	if not await _until_elapsed(60):
 		return
 	await _capture("05-level-2-relay.png")
 	if not await _until_elapsed(102):
 		return
-	_drag_lamp(0, 2)
+	_key(KEY_D)
+	_click(_dish_point("CellCenter", 1))
+	if not await _until_elapsed(110):
+		return
+	_key(KEY_S)
+	if not await _until_elapsed(114):
+		return
+	if not _check(observed_light.text.begins_with("背光"), "moving the lamp down one row changes coverage"):
+		return
+	_key(KEY_W)
+	if not await _until_elapsed(118):
+		return
+	if not _check(observed_light.text.begins_with("受光"), "moving the lamp back up restores coverage"):
+		return
 	if not await _until_elapsed(148):
 		return
-	_drag_lamp(2, 0)
+	_key(KEY_A)
 	if not await _until_elapsed(180):
 		return
 	if not _check(result.visible and result.text == "两关完成" and not next.visible, "level 2 passes through the UI"):
@@ -106,7 +128,7 @@ func _run() -> void:
 		return
 	print("LEVEL 2 FIXED LAMP ", score.text)
 	_click_control(game.get_node("Restart"))
-	_drag_lamp(1, 4)
+	_drag_lamp((GRID_SIZE - 2) * GRID_SIZE + GRID_SIZE - 1)
 	_click_control(game.get_node("Speed"))
 	_click_control(game.get_node("Pause"))
 	if not await _until_elapsed(180):
@@ -144,13 +166,23 @@ func _dish_point(method: String, slot: int) -> Vector2:
 	return dish.get_global_transform_with_canvas() * local
 
 
-func _drag_lamp(from: int, to: int) -> void:
-	var start := _dish_point("RailPoint", from)
-	var end := _dish_point("RailPoint", to)
+func _drag_lamp(to: int) -> void:
+	var lamp: Vector2 = dish.call("LampHandle")
+	var start := dish.get_global_transform_with_canvas() * lamp
+	var end := _dish_point("CellCenter", to)
 	_motion(start, 0)
 	_button(start, true)
 	_motion(end, MOUSE_BUTTON_MASK_LEFT)
 	_button(end, false)
+
+func _key(code: Key) -> void:
+	var press := InputEventKey.new()
+	press.physical_keycode = code
+	press.pressed = true
+	root.push_input(press, true)
+	var release := InputEventKey.new()
+	release.physical_keycode = code
+	root.push_input(release, true)
 
 
 func _click_control(control: Control) -> void:
