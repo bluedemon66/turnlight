@@ -1,0 +1,24 @@
+{
+  "slotCount": 6,
+  "rules": {
+    "stages": [
+      { "growthToNext": 30, "darkPerSecond": 0.50, "wiltAt": 63, "dieAt": 90, "vitality": 0 },
+      { "growthToNext": 120, "darkPerSecond": 0.75, "wiltAt": 63, "dieAt": 90, "vitality": 10 },
+      { "growthToNext": 540, "darkPerSecond": 1.00, "wiltAt": 63, "dieAt": 90, "vitality": 50 },
+      { "growthToNext": null, "darkPerSecond": 1.50, "wiltAt": 63, "dieAt": 90, "vitality": 230 }
+    ],
+    "lightGrowthPerSecond": 3,
+    "lightDarkPerSecond": -3,
+    "moveSecondsPerSlot": 2.5,
+    "firstSeedGrowth": 180,
+    "seedGrowthIncrement": 90,
+    "seedsPerHarvest": 1,
+    "recoverDark": 63,
+    "wiltMultiplier": 0.5,
+    "stageDarkRelief": 20
+  },
+  "levels": [
+    { "number": 1, "durationSeconds": 180, "addedSeeds": 3, "lightRange": 2, "targetVitality": 150 },
+    { "number": 2, "durationSeconds": 180, "addedSeeds": 1, "lightRange": 2, "targetVitality": 160 }
+  ]
+}

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <UseAppHost>false</UseAppHost>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Domain/**/*.cs" LinkBase="Domain" />
+    <Compile Include="../../src/Levels/Domain/**/*.cs" LinkBase="LevelsDomain" />
+    <Compile Include="../../src/Persistence/**/*.cs" LinkBase="Persistence" />
+    <None Include="../../data/levels-demo.json" Link="levels-demo.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="PlantDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/Config/PlantDefinition.cs" id="1_species"]
+
+[resource]
+script = ExtResource("1_species")
+SpeciesId = "light_mother"
+DisplayName = "光源母体"
+StepsPerStage = 8
+DarkLimitSteps = 62
+FruitPeriodSteps = 8

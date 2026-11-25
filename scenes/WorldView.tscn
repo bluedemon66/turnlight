@@ -1,0 +1,25 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/Presentation/WorldView.cs" id="1_view"]
+[ext_resource type="PackedScene" path="res://scenes/PlantView.tscn" id="2_plant"]
+
+[node name="WorldView" type="Node2D"]
+clip_children = 2
+script = ExtResource("1_view")
+PlantScene = ExtResource("2_plant")
+
+[node name="Plants" type="Node2D" parent="."]
+
+[node name="Lamp" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(-5, -9, 5, -9, 9, -5, 9, 5, 5, 9, -5, 9, -9, 5, -9, -5)
+color = Color(1, 0.9, 0.58, 1)
+
+[node name="Lens" type="Polygon2D" parent="Lamp"]
+polygon = PackedVector2Array(-3, -6, 3, -6, 6, -3, 6, 3, 3, 6, -3, 6, -6, 3, -6, -3)
+color = Color(0.31, 0.28, 0.20, 1)
+
+[node name="Filament" type="Line2D" parent="Lamp"]
+points = PackedVector2Array(-3, 2, -1, -2, 1, 2, 3, -2)
+width = 1.5
+default_color = Color(1, 0.93, 0.66, 1)
+antialiased = true

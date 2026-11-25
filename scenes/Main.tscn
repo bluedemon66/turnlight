@@ -1,0 +1,21 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://src/Presentation/GameController.cs" id="1_controller"]
+[ext_resource type="PackedScene" path="res://scenes/WorldView.tscn" id="2_dish"]
+[ext_resource type="PackedScene" path="res://scenes/Hud.tscn" id="3_hud"]
+[ext_resource type="Resource" path="res://data/SunFlower.tres" id="4_species"]
+[ext_resource type="Resource" path="res://data/LightMother.tres" id="5_mother"]
+[ext_resource type="Resource" path="res://data/SkyBamboo.tres" id="6_bamboo"]
+
+[node name="Main" type="Node"]
+script = ExtResource("1_controller")
+Species = ExtResource("4_species")
+Mother = ExtResource("5_mother")
+Bamboo = ExtResource("6_bamboo")
+
+[node name="WorldView" parent="." instance=ExtResource("2_dish")]
+position = Vector2(40, 100)
+
+[node name="Interface" type="CanvasLayer" parent="."]
+
+[node name="Hud" parent="Interface" instance=ExtResource("3_hud")]

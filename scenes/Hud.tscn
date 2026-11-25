@@ -1,0 +1,299 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://src/Presentation/Hud.cs" id="1_hud"]
+
+[sub_resource type="SystemFont" id="Font"]
+font_names = PackedStringArray("Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "WenQuanYi Zen Hei")
+
+[sub_resource type="StyleBoxFlat" id="Normal"]
+bg_color = Color(0.15,0.27,0.25,1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+content_margin_left = 7
+content_margin_right = 7
+content_margin_top = 3
+content_margin_bottom = 3
+
+[sub_resource type="StyleBoxFlat" id="Hover"]
+bg_color = Color(0.21,0.36,0.31,1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+content_margin_left = 7
+content_margin_right = 7
+content_margin_top = 3
+content_margin_bottom = 3
+
+[sub_resource type="StyleBoxFlat" id="Pressed"]
+bg_color = Color(0.12,0.22,0.21,1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+content_margin_left = 7
+content_margin_right = 7
+content_margin_top = 3
+content_margin_bottom = 3
+
+[sub_resource type="StyleBoxFlat" id="Disabled"]
+bg_color = Color(0.10,0.18,0.17,1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+content_margin_left = 7
+content_margin_right = 7
+content_margin_top = 3
+content_margin_bottom = 3
+
+[sub_resource type="StyleBoxFlat" id="Primary"]
+bg_color = Color(0.26,0.40,0.31,1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+content_margin_left = 7
+content_margin_right = 7
+content_margin_top = 3
+content_margin_bottom = 3
+
+[sub_resource type="StyleBoxFlat" id="Track"]
+bg_color = Color(0.13,0.22,0.20,1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="GrowthFill"]
+bg_color = Color(0.61,0.79,0.53,1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="DarkFill"]
+bg_color = Color(0.88,0.63,0.45,1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="Theme" id="Theme"]
+default_font = SubResource("Font")
+default_font_size = 15
+Button/styles/normal = SubResource("Normal")
+Button/styles/hover = SubResource("Hover")
+Button/styles/pressed = SubResource("Pressed")
+Button/styles/disabled = SubResource("Disabled")
+Button/colors/font_disabled_color = Color(0.49,0.58,0.54,1)
+OptionButton/styles/normal = SubResource("Normal")
+OptionButton/styles/hover = SubResource("Hover")
+OptionButton/styles/pressed = SubResource("Pressed")
+OptionButton/styles/disabled = SubResource("Disabled")
+
+[node name="Hud" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+theme = SubResource("Theme")
+script = ExtResource("1_hud")
+
+[node name="Sidebar" type="ColorRect" parent="."]
+offset_left = 659.0
+offset_right = 960.0
+offset_bottom = 580.0
+mouse_filter = 2
+color = Color(0.075,0.15,0.137,1)
+
+[node name="Session" type="HBoxContainer" parent="."]
+offset_left = 675.0
+offset_top = 528.0
+offset_right = 943.0
+offset_bottom = 562.0
+theme_override_constants/separation = 5
+
+[node name="Pause" type="Button" parent="Session"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 31)
+text = "暂停"
+
+[node name="Restore" type="Button" parent="Session"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 31)
+text = "恢复检查点"
+
+[node name="NewGame" type="Button" parent="Session"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 31)
+text = "重新开始"
+
+[node name="Title" type="Label" parent="."]
+offset_left = 40
+offset_top = 13
+offset_right = 285
+offset_bottom = 61
+mouse_filter = 2
+theme_override_font_sizes/font_size = 30
+text = "一线光束"
+
+[node name="Phase" type="Label" parent="."]
+offset_left = 280
+offset_top = 24
+offset_right = 640
+offset_bottom = 54
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.73,0.85,0.75,1)
+horizontal_alignment = 2
+
+[node name="Objective" type="Label" parent="."]
+offset_left = 40
+offset_top = 57
+offset_right = 640
+offset_bottom = 95
+mouse_filter = 2
+theme_override_font_sizes/font_size = 15
+autowrap_mode = 3
+
+[node name="Hint" type="Label" parent="."]
+offset_left = 40
+offset_top = 501
+offset_right = 640
+offset_bottom = 529
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.72,0.81,0.75,1)
+
+[node name="Feedback" type="Label" parent="."]
+offset_left = 40
+offset_top = 530
+offset_right = 640
+offset_bottom = 573
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.99,0.82,0.58,1)
+autowrap_mode = 3
+
+[node name="Tools" type="VBoxContainer" parent="."]
+offset_left = 677.0
+offset_top = 18.0
+offset_right = 941.0
+offset_bottom = 504.0
+theme_override_constants/separation = 5
+
+[node name="SeedTitle" type="Label" parent="Tools"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "种植"
+
+[node name="Species" type="OptionButton" parent="Tools"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 33)
+
+[node name="Inventory" type="Label" parent="Tools"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = ""
+
+[node name="PlantButton" type="Button" parent="Tools"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 31)
+text = "播种"
+theme_override_styles/normal = SubResource("Primary")
+
+[node name="Separator" type="HSeparator" parent="Tools"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Selection" type="Label" parent="Tools"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+text = ""
+
+[node name="GrowthLabel" type="Label" parent="Tools"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = ""
+
+[node name="GrowthBar" type="ProgressBar" parent="Tools"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(0, 6)
+theme_override_styles/background = SubResource("Track")
+theme_override_styles/fill = SubResource("GrowthFill")
+show_percentage = false
+
+[node name="DarkLabel" type="Label" parent="Tools"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = ""
+
+[node name="DarkBar" type="ProgressBar" parent="Tools"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(0, 6)
+theme_override_styles/background = SubResource("Track")
+theme_override_styles/fill = SubResource("DarkFill")
+show_percentage = false
+
+[node name="Care" type="Label" parent="Tools"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = ""
+autowrap_mode = 3
+custom_minimum_size = Vector2(0, 22)
+theme_override_colors/font_color = Color(0.74,0.84,0.77,1)
+
+[node name="Actions" type="GridContainer" parent="Tools"]
+layout_mode = 2
+columns = 2
+theme_override_constants/h_separation = 5
+theme_override_constants/v_separation = 5
+
+[node name="Move" type="Button" parent="Tools/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 31)
+text = "移栽"
+
+[node name="Aim" type="Button" parent="Tools/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 31)
+text = "调整方向"
+
+[node name="Harvest" type="Button" parent="Tools/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 31)
+text = "收获种子"
+
+[node name="Fruit" type="Button" parent="Tools/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 31)
+text = "分配果实"
+
+[node name="Stock" type="Label" parent="Tools"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = ""
+theme_override_colors/font_color = Color(0.78,0.84,0.73,1)
+[node name="Progress" type="Label" parent="Tools"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = ""
+autowrap_mode = 3
+
+[node name="Confirm" type="ConfirmationDialog" parent="."]
+title = "一线光束"
+size = Vector2i(392, 150)
+exclusive = true
+ok_button_text = "确认"
+cancel_button_text = "取消"
