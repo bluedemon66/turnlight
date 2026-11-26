@@ -5,7 +5,9 @@ namespace OneBeam.Levels.Domain;
 
 public enum GrowthStage { Seed, Seedling, Normal, Mother }
 public enum LevelRunStatus { Playing, Won, Lost }
-public enum BeamDirection { East, South, West, North }
+// The first four values are the original quarter-turn directions; the diagonals are only
+// reachable when GrowthRules.EllipseBeam is on (Q/E then turn 45 degrees).
+public enum BeamDirection { East, South, West, North, SouthEast, SouthWest, NorthWest, NorthEast }
 
 public sealed record LevelDefinition(int Number, double DurationSeconds, int AddedSeeds,
     int LightRange, double TargetVitality)
@@ -21,7 +23,7 @@ public sealed record StageRule(double? GrowthToNext, double DarkPerSecond, doubl
 public sealed record GrowthRules(IReadOnlyList<StageRule> Stages, double LightGrowthPerSecond,
     double LightDarkPerSecond, double MoveSecondsPerSlot, double FirstSeedGrowth,
     double SeedGrowthIncrement, int SeedsPerHarvest, double RecoverDark, double WiltMultiplier,
-    double StageDarkRelief = 20)
+    double StageDarkRelief = 20, bool EllipseBeam = false)
 {
     internal void Validate()
     {

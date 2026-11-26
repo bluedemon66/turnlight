@@ -20,6 +20,7 @@ internal static class Program
             FruitAndDaylightHaveSeparateEffects();
             SnapshotContinuation();
             LevelChecks.Run();
+            StandardLevelChecks.Run();
             Console.WriteLine("PASS one-beam domain and checkpoint checks");
             return 0;
         }

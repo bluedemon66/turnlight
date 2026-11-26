@@ -52,7 +52,51 @@ public sealed class LevelSimulation
     private static int Snap(double position) => (int)Math.Floor(position + .5);
 
     public bool IsLit(int slot) =>
-        slot >= 0 && slot < SlotCount && IsLit(slot, Snap(_lampX), Snap(_lampY));
+        slot >= 0 && slot < SlotCount && (Rules.EllipseBeam
+            ? IsInEllipse(slot, _lampX, _lampY)
+            : IsLit(slot, Snap(_lampX), Snap(_lampY)));
+
+    // Q/E order when EllipseBeam is on: 45 degrees per press.
+    private static readonly BeamDirection[] EighthTurns =
+    {
+        BeamDirection.East, BeamDirection.SouthEast, BeamDirection.South, BeamDirection.SouthWest,
+        BeamDirection.West, BeamDirection.NorthWest, BeamDirection.North, BeamDirection.NorthEast
+    };
+
+    // Longest simulated slice while the ellipse sweeps, so plants it passes over get their share of light.
+    private const double SweepSlice = .05;
+
+    public static (int X, int Y) Step(BeamDirection direction) => direction switch
+    {
+        BeamDirection.East => (1, 0),
+        BeamDirection.South => (0, 1),
+        BeamDirection.West => (-1, 0),
+        BeamDirection.North => (0, -1),
+        BeamDirection.SouthEast => (1, 1),
+        BeamDirection.SouthWest => (-1, 1),
+        BeamDirection.NorthWest => (-1, -1),
+        BeamDirection.NorthEast => (1, -1),
+        _ => throw new ArgumentOutOfRangeException(nameof(direction))
+    };
+
+    /// <summary>
+    /// Ellipse beam: semi-axes LightRange/2 along the beam direction and 0.5 across it. The beam
+    /// starts at the anchor cell and reaches LightRange - 1 cells along the direction (a diagonal
+    /// step counts as one), so at range 2 it covers the anchor plus one side or diagonal neighbour.
+    /// A plant is lit when its cell centre is strictly inside.
+    /// </summary>
+    private bool IsInEllipse(int slot, double anchorX, double anchorY)
+    {
+        var (sx, sy) = Step(Direction);
+        double reach = (Level.LightRange - 1) * .5;
+        double cx = anchorX + sx * reach, cy = anchorY + sy * reach;
+        double angle = Math.Atan2(sy, sx);
+        double dx = slot % GridSize - cx, dy = slot / GridSize - cy;
+        double u = dx * Math.Cos(angle) + dy * Math.Sin(angle);
+        double v = -dx * Math.Sin(angle) + dy * Math.Cos(angle);
+        double a = Level.LightRange * .5, b = .5;
+        return u * u / (a * a) + v * v / (b * b) < 1 - 1e-9;
+    }
 
     private bool IsLit(int slot, int anchorX, int anchorY)
     {
@@ -81,14 +125,10 @@ public sealed class LevelSimulation
     {
         int last = GridSize - 1;
         int reach = Level.LightRange - 1;
-        return direction switch
-        {
-            BeamDirection.East => (Math.Clamp(x, 0, last - reach), y),
-            BeamDirection.South => (x, Math.Clamp(y, 0, last - reach)),
-            BeamDirection.West => (Math.Clamp(x, reach, last), y),
-            BeamDirection.North => (x, Math.Clamp(y, reach, last)),
-            _ => throw new ArgumentOutOfRangeException(nameof(direction))
-        };
+        var (dx, dy) = Step(direction);
+        static int Fit(int value, int sign, int last, int reach) =>
+            sign > 0 ? Math.Clamp(value, 0, last - reach) : sign < 0 ? Math.Clamp(value, reach, last) : value;
+        return (Fit(x, dx, last, reach), Fit(y, dy, last, reach));
     }
 
     public int ClampLampTarget(int slot)
@@ -106,10 +146,13 @@ public sealed class LevelSimulation
         return true;
     }
 
+    /// <summary>Turns the beam one step: a quarter turn, or 45 degrees when the beam is an ellipse.</summary>
     public bool TryRotateLamp(int quarterTurns)
     {
         if (Status != LevelRunStatus.Playing || quarterTurns is not (-1 or 1)) return false;
-        var direction = (BeamDirection)(((int)Direction + quarterTurns + 4) % 4);
+        var direction = Rules.EllipseBeam
+            ? EighthTurns[(Array.IndexOf(EighthTurns, Direction) + quarterTurns + 8) % 8]
+            : (BeamDirection)(((int)Direction + quarterTurns + 4) % 4);
         var current = (X: Snap(_lampX), Y: Snap(_lampY));
         var target = (X: LampTarget % GridSize, Y: LampTarget / GridSize);
         if (ClampAnchor(current.X, current.Y, direction) != current ||
@@ -131,16 +174,21 @@ public sealed class LevelSimulation
             double nextY = _lampY;
             int targetX = LampTarget % GridSize;
             int targetY = LampTarget / GridSize;
+            if (Rules.EllipseBeam && (_lampX != targetX || _lampY != targetY))
+                slice = Math.Min(slice, SweepSlice);
             if (_lampX != targetX)
                 nextX = MoveOneInterval(_lampX, targetX, ref slice);
             else if (_lampY != targetY)
                 nextY = MoveOneInterval(_lampY, targetY, ref slice);
 
-            int sampleX = Snap((_lampX + nextX) / 2);
-            int sampleY = Snap((_lampY + nextY) / 2);
+            double midX = (_lampX + nextX) / 2, midY = (_lampY + nextY) / 2;
+            int sampleX = Snap(midX);
+            int sampleY = Snap(midY);
             for (int i = 0; i < SlotCount; i++)
                 if (_slots[i] is { } plant)
-                    _slots[i] = AdvancePlant(plant, IsLit(i, sampleX, sampleY), slice);
+                    _slots[i] = AdvancePlant(plant, Rules.EllipseBeam
+                        ? IsInEllipse(i, midX, midY)
+                        : IsLit(i, sampleX, sampleY), slice);
             _lampX = nextX;
             _lampY = nextY;
             remaining -= slice;

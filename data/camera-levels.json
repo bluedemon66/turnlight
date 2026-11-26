@@ -1,0 +1,24 @@
+{
+  "gridSize": 5,
+  "rules": {
+    "stages": [
+      { "growthToNext": 15, "darkPerSecond": 2.5, "wiltAt": 63, "dieAt": 90, "vitality": 0 },
+      { "growthToNext": 30, "darkPerSecond": 3.2142857142857144, "wiltAt": 63, "dieAt": 90, "vitality": 5 },
+      { "growthToNext": 45, "darkPerSecond": 3.75, "wiltAt": 63, "dieAt": 90, "vitality": 15 },
+      { "growthToNext": null, "darkPerSecond": 4.5, "wiltAt": 63, "dieAt": 90, "vitality": 30 }
+    ],
+    "lightGrowthPerSecond": 3,
+    "lightDarkPerSecond": -5.625,
+    "moveSecondsPerSlot": 0.4,
+    "firstSeedGrowth": 15,
+    "seedGrowthIncrement": 15,
+    "seedsPerHarvest": 1,
+    "recoverDark": 63,
+    "wiltMultiplier": 0.5,
+    "stageDarkRelief": 0,
+    "ellipseBeam": true
+  },
+  "levels": [
+    { "number": 1, "durationSeconds": 120, "addedSeeds": 3, "lightRange": 2, "targetVitality": 105 }
+  ]
+}

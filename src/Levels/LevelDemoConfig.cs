@@ -9,16 +9,19 @@ public sealed record LevelDemoConfig(int GridSize, GrowthRules Rules, LevelDefin
 {
     private const string ConfigPath = "res://data/levels-demo.json";
 
-    public static LevelDemoConfig Load()
+    public static LevelDemoConfig Load(string path = ConfigPath)
     {
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var config = JsonSerializer.Deserialize<LevelDemoConfig>(
-            FileAccess.GetFileAsString(ConfigPath), options);
+            FileAccess.GetFileAsString(path), options);
 
-        if (config is not { GridSize: > 0, Rules: not null, Levels.Length: 2 }
-            || config.Levels[0].Number != 1 || config.Levels[1].Number != 2)
-            throw new InvalidOperationException("Expected demo configuration for levels 1 and 2.");
+        // One or more levels numbered 1, 2, ... (the camera build ships a single standard level).
+        bool numbered = config is { GridSize: > 0, Rules: not null, Levels.Length: > 0 };
+        for (int i = 0; numbered && i < config!.Levels.Length; i++)
+            numbered = config.Levels[i]?.Number == i + 1;
+        if (!numbered)
+            throw new InvalidOperationException("Expected demo levels numbered from 1.");
 
-        return config;
+        return config!;
     }
 }
