@@ -17,29 +17,37 @@ public partial class FieldOverlay : Control
 
     private ChamberView _view = null!;
     private LevelSimulation? _sim;
-    private readonly Dictionary<int, Sprite2D> _plants = new();
+    private readonly Dictionary<int, LanternPlant> _plants = new();
+    private readonly List<LanternPlant> _dying = new();
+    // Remains (placeholder art): the wilted picture, still and darkened. A seed that died stays a dark seed.
+    private readonly Dictionary<int, LanternPlant> _remains = new();
+    private static readonly Color RemainsTint = new(.42f, .36f, .31f);
     private readonly Node2D _plantLayer = new() { Name = "Plants" };
-    private Texture2D _mature = null!, _wilted = null!, _seedling = null!, _seed = null!, _mask = null!;
-    private Shader _breath = null!;
+    // Status bars sit above every plant (z 10+), front rows over back rows, the selected one on top.
+    // The HUD (card, hints, corners) is a higher CanvasLayer, so it still covers them.
+    private readonly Node2D _barLayer = new() { Name = "Bars", ZIndex = 10 };
+    private readonly Dictionary<int, PlantStatusBar> _bars = new();
+    private readonly List<PlantStatusBar> _fadingBars = new();
+    private Texture2D _seed = null!;
     private Font _serif = null!;
 
+    /// <summary>The pit whose card was opened last: its outline and status bar go on top.</summary>
     public int Selected { get; set; } = -1;
+    /// <summary>Every pit with an open info card: each gets the gold outline and a fully opaque bar.</summary>
+    public ISet<int> Marked { get; } = new HashSet<int>();
     public bool Sowing { get; set; }
+    public bool Shoveling { get; set; }
     public int Hover { get; private set; } = -1;
 
     public void Setup(ChamberView view, Font serif)
     {
         _view = view;
         _serif = serif;
-        _mature = GD.Load<Texture2D>("res://art/plants/plant_alfalfa_mature_640.png");
-        _mask = GD.Load<Texture2D>("res://art/plants/plant_alfalfa_mature_mask.png");
-        _wilted = GD.Load<Texture2D>("res://art/plants/wilted_mature.png");
-        _seedling = GD.Load<Texture2D>("res://art/plants/seedling.png");
-        _seed = GD.Load<Texture2D>("res://art/plants/seed.png");
-        _breath = GD.Load<Shader>("res://shaders/plant_breath.gdshader");
+        _seed = GD.Load<Texture2D>("res://art/plants/lantern/lantern_0_seed.png");
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop;
         AddChild(_plantLayer);
+        AddChild(_barLayer);
         MouseExited += () => Hover = -1;
     }
 
@@ -54,7 +62,7 @@ public partial class FieldOverlay : Control
     public Vector2 PlantAnchor(int slot)
     {
         var soil = _view.Screen(_view.CellCenter(slot, -ChamberView.PitDepth));
-        return _plants.TryGetValue(slot, out var s) && s.Visible
+        return (_plants.TryGetValue(slot, out var s) || _remains.TryGetValue(slot, out s)) && s.Visible
             ? soil - new Vector2(0, PlantHeight(slot) * .6f)
             : soil;
     }
@@ -96,15 +104,21 @@ public partial class FieldOverlay : Control
             foreach (int slot in Footprint(sim, sim.LampTarget))
                 Dashed(_view.PitOutline(slot, .02f), gold with { A = .85f }, 2f);
 
-        if (Sowing && Hover >= 0 && sim.Slots[Hover] == null)
+        if (Shoveling && Hover >= 0 && !sim.IsPitEmpty(Hover))
+            Dashed(_view.PitOutline(Hover, .02f), ChamberStyle.Warn with { A = .9f }, 1.8f);
+
+        if (Sowing && Hover >= 0 && sim.IsPitEmpty(Hover))
         {
             Dashed(_view.PitOutline(Hover, .02f), gold with { A = .7f }, 1.6f);
-            float px = _view.CellPixels(Hover) * .3f;
+            float h = _view.CellPixels(Hover) * .32f;
+            var px = new Vector2(h * _seed.GetWidth() / _seed.GetHeight(), h);
             var at = _view.Screen(_view.CellCenter(Hover, -ChamberView.PitDepth));
-            DrawTextureRect(_seed, new Rect2(at - new Vector2(px, px) * .5f, new Vector2(px, px)), false,
+            DrawTextureRect(_seed, new Rect2(at - new Vector2(px.X * .5f, px.Y * .85f), px), false,
                 new Color(1, 1, 1, .45f));
         }
 
+        foreach (int slot in Marked)
+            if (slot != Selected) Dashed(_view.PitOutline(slot, .03f), gold with { A = .75f }, 1.8f);
         if (Selected >= 0)
             Dashed(_view.PitOutline(Selected, .03f), gold, 2.4f);
     }
@@ -142,18 +156,69 @@ public partial class FieldOverlay : Control
         }
     }
 
-    private float PlantHeight(int slot)
+    /// <summary>Height of the plant above the soil, in screen pixels.</summary>
+    private float PlantHeight(int slot) =>
+        _plants.TryGetValue(slot, out var p) || _remains.TryGetValue(slot, out p) ? p.VisibleHeight(p.Index) : 0;
+
+    /// <summary>Drop every plant without animating, e.g. when the level restarts.</summary>
+    public void ResetPlants()
     {
-        if (_sim?.Slots[slot] is not { } plant) return 0;
-        float cell = _view.CellPixels(slot);
-        return plant.Stage switch
-        {
-            GrowthStage.Seed => cell * .25f,
-            GrowthStage.Seedling => cell * .62f,
-            GrowthStage.Normal => cell * 1.18f,
-            _ => cell * 1.6f
-        };
+        foreach (var p in _plants.Values.Concat(_dying).Concat(_remains.Values)) p.QueueFree();
+        _remains.Clear();
+        foreach (var b in _bars.Values.Concat(_fadingBars)) b.QueueFree();
+        _plants.Clear();
+        _dying.Clear();
+        _bars.Clear();
+        _fadingBars.Clear();
     }
+
+    private void SyncBar(LevelSimulation sim, int slot, LevelPlant plant, LanternPlant view, bool lit, bool fresh)
+    {
+        if (!_bars.TryGetValue(slot, out var bar))
+        {
+            bar = new PlantStatusBar { Name = $"Bar{slot}" };
+            _bars[slot] = bar;
+            _barLayer.AddChild(bar);
+            fresh = true;
+        }
+        bar.Anchor = view.Position;
+        bar.Sync(plant, sim.Rules, lit, view.VisibleHeight(PictureOf(plant)), snap: fresh);
+        bar.Selected = Marked.Contains(slot) || slot == Selected;
+        bar.ZIndex = slot == Selected ? sim.GridSize + 1 : bar.Selected ? sim.GridSize : slot / sim.GridSize;
+    }
+
+    /// <summary>The status bar over a slot, if a plant grows there (for tests).</summary>
+    public PlantStatusBar? BarAt(int slot) => _bars.GetValueOrDefault(slot);
+
+    private static int PictureOf(LevelPlant plant) =>
+        plant.Wilted && plant.Stage != GrowthStage.Seed ? LanternPlant.Wilted : (int)plant.Stage;
+
+    /// <summary>Remains in a pit: the dying plant turns into them in place, or they appear (e.g. after a restart).</summary>
+    private void SyncRemains(LevelSimulation sim, int slot, LevelRemains remains)
+    {
+        if (!_remains.TryGetValue(slot, out var view))
+        {
+            bool turning = _plants.Remove(slot, out view);
+            if (!turning)
+            {
+                view = new LanternPlant { Name = $"Remains{slot}" };
+                _plantLayer.AddChild(view);
+            }
+            else view!.Name = $"Remains{slot}";
+            view!.Still = true;
+            bool seed = remains.Stage == GrowthStage.Seed;
+            view.DarkSeed = seed;
+            view.Show(seed ? LanternPlant.Seed : LanternPlant.Wilted, animate: turning);
+            _remains[slot] = view;
+        }
+        view!.PixelScale = _view.CellPixels(slot) * 1.05f / 474f;
+        view.Modulate = RemainsTint;
+        view.Position = _view.Screen(_view.CellCenter(slot, -ChamberView.PitDepth * .55f));
+        view.ZIndex = slot / sim.GridSize;
+    }
+
+    /// <summary>The remains view in a slot, if any (for tests).</summary>
+    public bool HasRemainsView(int slot) => _remains.ContainsKey(slot);
 
     private void SyncPlants(LevelSimulation sim)
     {
@@ -162,59 +227,52 @@ public partial class FieldOverlay : Control
             var plant = sim.Slots[slot];
             if (plant == null)
             {
-                if (_plants.Remove(slot, out var gone)) gone.QueueFree();
+                if (sim.Remains[slot] is { } remains)
+                    SyncRemains(sim, slot, remains);
+                else
+                {
+                    // Gone (shovelled, harvested, remains cleared, or no remains rule): sink into the soil.
+                    if (_plants.Remove(slot, out var gone) || _remains.Remove(slot, out gone))
+                    {
+                        gone.Die();
+                        _dying.Add(gone);
+                    }
+                }
+                if (_bars.Remove(slot, out var bar))
+                {
+                    bar.FadeOut();
+                    _fadingBars.Add(bar);
+                }
                 continue;
             }
-            if (!_plants.TryGetValue(slot, out var sprite))
+            if (_remains.Remove(slot, out var old)) old.QueueFree();
+            bool fresh = !_plants.TryGetValue(slot, out var view);
+            if (fresh)
             {
-                sprite = new Sprite2D { Name = $"Plant{slot}", Centered = false };
-                _plants[slot] = sprite;
-                _plantLayer.AddChild(sprite);
+                view = new LanternPlant { Name = $"Plant{slot}", Phase = slot * .731f };
+                _plants[slot] = view;
+                _plantLayer.AddChild(view);
             }
-            Dress(sprite, plant, slot);
+            view!.PixelScale = _view.CellPixels(slot) * 1.05f / 474f;
+            view.DarkSeed = plant.Wilted && plant.Stage == GrowthStage.Seed;
+            view.Show(PictureOf(plant), animate: !fresh);
             bool lit = sim.IsLit(slot);
-            sprite.Modulate = plant.Wilted ? new Color(.62f, .62f, .66f)
-                : lit ? new Color(1.12f, 1.04f, .9f) : new Color(.52f, .58f, .7f);
-            sprite.Position = _view.Screen(_view.CellCenter(slot, -ChamberView.PitDepth * .55f));
-            sprite.ZIndex = slot / sim.GridSize;
+            view.Modulate = lit ? new Color(1.1f, 1.04f, .92f) : new Color(.56f, .61f, .72f);
+            view.Position = _view.Screen(_view.CellCenter(slot, -ChamberView.PitDepth * .55f));
+            view.ZIndex = slot / sim.GridSize;
+            SyncBar(sim, slot, plant, view, lit, fresh);
         }
-    }
-
-    private void Dress(Sprite2D sprite, LevelPlant plant, int slot)
-    {
-        float height = PlantHeight(slot);
-        Texture2D texture;
-        Vector2 root;
-        float drawn;
-        switch (plant.Stage)
+        for (int i = _fadingBars.Count - 1; i >= 0; i--)
         {
-            case GrowthStage.Seed:
-                texture = _seed; root = new Vector2(128, 140); drawn = 120;
-                break;
-            case GrowthStage.Seedling:
-                texture = _seedling; root = new Vector2(256, 506); drawn = 480;
-                break;
-            default:
-                bool wilt = plant.Wilted;
-                texture = wilt ? _wilted : _mature;
-                root = wilt ? new Vector2(256, 506) : new Vector2(320, 600);
-                drawn = wilt ? 470 : 545;
-                break;
+            if (!_fadingBars[i].Finished) continue;
+            _fadingBars[i].QueueFree();
+            _fadingBars.RemoveAt(i);
         }
-        if (sprite.Texture != texture)
+        for (int i = _dying.Count - 1; i >= 0; i--)
         {
-            sprite.Texture = texture;
-            sprite.Material = texture == _mature ? Breathing(slot) : null;
+            if (!_dying[i].Finished) continue;
+            _dying[i].QueueFree();
+            _dying.RemoveAt(i);
         }
-        sprite.Offset = -root;
-        sprite.Scale = Vector2.One * (height / drawn);
-    }
-
-    private ShaderMaterial Breathing(int slot)
-    {
-        var m = new ShaderMaterial { Shader = _breath };
-        m.SetShaderParameter("mask", _mask);
-        m.SetShaderParameter("phase", Mathf.PosMod(slot * .37f + slot / 5 * .23f, 1f));
-        return m;
     }
 }

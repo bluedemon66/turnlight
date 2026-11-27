@@ -9,7 +9,9 @@ public sealed class LevelSimulation
 {
     private const double Epsilon = 1e-9;
     private readonly LevelPlant?[] _slots;
+    private readonly LevelRemains?[] _remains;
     private LevelPlant?[] _entryPlants;
+    private LevelRemains?[] _entryRemains;
     private int _entrySeeds;
     private double _lampX;
     private double _lampY;
@@ -22,6 +24,14 @@ public sealed class LevelSimulation
     public int GridSize { get; }
     public int SlotCount => _slots.Length;
     public IReadOnlyList<LevelPlant?> Slots { get; }
+    /// <summary>Withered remains per slot (only with GrowthRules.LeaveRemains). A slot holds a plant or remains, never both.</summary>
+    public IReadOnlyList<LevelRemains?> Remains { get; }
+    /// <summary>
+    /// Reward points pay for the shovel (GrowthRules.ShovelCost). Nothing earns them yet: the
+    /// reward system is not designed, so the standard level keeps the cost at 0.
+    /// </summary>
+    public int RewardPoints { get; private set; }
+    public bool IsPitEmpty(int slot) => slot >= 0 && slot < SlotCount && _slots[slot] == null && _remains[slot] == null;
     public LevelRunStatus Status { get; private set; }
     public double ElapsedSeconds { get; private set; }
     public double RemainingSeconds => Level.DurationSeconds - ElapsedSeconds;
@@ -45,7 +55,10 @@ public sealed class LevelSimulation
         Rules = rules with { Stages = Array.AsReadOnly(rules.Stages.ToArray()) };
         _slots = new LevelPlant?[gridSize * gridSize];
         Slots = Array.AsReadOnly(_slots);
+        _remains = new LevelRemains?[_slots.Length];
+        Remains = Array.AsReadOnly(_remains);
         _entryPlants = new LevelPlant?[_slots.Length];
+        _entryRemains = new LevelRemains?[_slots.Length];
         AvailableSeeds = _entrySeeds = level.AddedSeeds;
     }
 
@@ -114,10 +127,33 @@ public sealed class LevelSimulation
 
     public bool TryPlant(int slot)
     {
-        if (Status != LevelRunStatus.Playing || AvailableSeeds == 0 ||
-            slot < 0 || slot >= SlotCount || _slots[slot] != null) return false;
+        if (Status != LevelRunStatus.Playing || AvailableSeeds == 0 || !IsPitEmpty(slot)) return false;
         AvailableSeeds--;
         _slots[slot] = new LevelPlant();
+        return true;
+    }
+
+    /// <summary>
+    /// Shovel a live plant or remains out of a pit: it becomes an empty pit, the plant leaves
+    /// no remains and no seeds come back. Costs GrowthRules.ShovelCost reward points.
+    /// </summary>
+    public bool TryShovel(int slot)
+    {
+        if (Status != LevelRunStatus.Playing || slot < 0 || slot >= SlotCount || IsPitEmpty(slot) ||
+            RewardPoints < Rules.ShovelCost) return false;
+        RewardPoints -= Rules.ShovelCost;
+        _slots[slot] = null;
+        _remains[slot] = null;
+        return true;
+    }
+
+    /// <summary>Harvest a mother plant: GrowthRules.HarvestSeeds seeds, and the plant dies without remains.</summary>
+    public bool TryHarvest(int slot)
+    {
+        if (Status != LevelRunStatus.Playing || slot < 0 || slot >= SlotCount ||
+            _slots[slot] is not { Stage: GrowthStage.Mother }) return false;
+        _slots[slot] = null;
+        AvailableSeeds += Rules.HarvestSeeds;
         return true;
     }
 
@@ -174,9 +210,11 @@ public sealed class LevelSimulation
             double nextY = _lampY;
             int targetX = LampTarget % GridSize;
             int targetY = LampTarget / GridSize;
-            if (Rules.EllipseBeam && (_lampX != targetX || _lampY != targetY))
+            if ((Rules.EllipseBeam || Rules.DiagonalMove) && (_lampX != targetX || _lampY != targetY))
                 slice = Math.Min(slice, SweepSlice);
-            if (_lampX != targetX)
+            if (Rules.DiagonalMove)
+                (nextX, nextY) = MoveTogether(targetX, targetY, ref slice);
+            else if (_lampX != targetX)
                 nextX = MoveOneInterval(_lampX, targetX, ref slice);
             else if (_lampY != targetY)
                 nextY = MoveOneInterval(_lampY, targetY, ref slice);
@@ -186,9 +224,14 @@ public sealed class LevelSimulation
             int sampleY = Snap(midY);
             for (int i = 0; i < SlotCount; i++)
                 if (_slots[i] is { } plant)
+                {
                     _slots[i] = AdvancePlant(plant, Rules.EllipseBeam
                         ? IsInEllipse(i, midX, midY)
                         : IsLit(i, sampleX, sampleY), slice);
+                    // Withered to death: leave remains when the rules say so.
+                    if (_slots[i] == null && Rules.LeaveRemains)
+                        _remains[i] = new LevelRemains(plant.Stage, Level.Number);
+                }
             _lampX = nextX;
             _lampY = nextY;
             remaining -= slice;
@@ -199,6 +242,25 @@ public sealed class LevelSimulation
             ElapsedSeconds = Level.DurationSeconds;
             Status = Vitality >= Level.TargetVitality ? LevelRunStatus.Won : LevelRunStatus.Lost;
         }
+    }
+
+    /// <summary>
+    /// GrowthRules.DiagonalMove: both axes travel at once along a straight line, taking
+    /// MoveSecondsPerSlot per cell of the longer axis, so a diagonal step takes as long as a
+    /// straight one.
+    /// </summary>
+    private (double X, double Y) MoveTogether(int targetX, int targetY, ref double seconds)
+    {
+        double dx = targetX - _lampX, dy = targetY - _lampY;
+        double travel = Math.Max(Math.Abs(dx), Math.Abs(dy)) * Rules.MoveSecondsPerSlot;
+        if (travel <= 0) return (_lampX, _lampY);
+        if (seconds >= travel)
+        {
+            seconds = travel;
+            return (targetX, targetY);
+        }
+        double f = seconds / travel;
+        return (_lampX + dx * f, _lampY + dy * f);
     }
 
     private double MoveOneInterval(double position, int target, ref double seconds)
@@ -263,7 +325,10 @@ public sealed class LevelSimulation
         Level = next;
         for (int i = 0; i < SlotCount; i++)
             if (_slots[i] is { } p) _slots[i] = p with { Darkness = 0, Wilted = false };
+        for (int i = 0; i < SlotCount; i++)
+            if (_remains[i] is { } r && next.Number - r.Day >= Rules.RemainsDays) _remains[i] = null;
         _entryPlants = (LevelPlant?[])_slots.Clone();
+        _entryRemains = (LevelRemains?[])_remains.Clone();
         _entrySeeds = AvailableSeeds + next.AddedSeeds;
         int x = Snap(_lampX);
         int y = Snap(_lampY);
@@ -278,6 +343,7 @@ public sealed class LevelSimulation
     public void RestartCurrent()
     {
         Array.Copy(_entryPlants, _slots, SlotCount);
+        Array.Copy(_entryRemains, _remains, SlotCount);
         AvailableSeeds = _entrySeeds;
         (_lampX, _lampY) = _entryLamp;
         LampTarget = _entryLampTarget;

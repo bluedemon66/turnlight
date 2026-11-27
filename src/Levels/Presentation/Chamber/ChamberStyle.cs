@@ -96,12 +96,12 @@ public partial class MeterBar : Control
 
 /// <summary>
 /// Camera viewfinder drawn over the whole screen: corner brackets, rules beside the hint,
-/// and the leader line from the info card to the selected plant.
+/// and the leader lines from the info cards to their plants.
 /// </summary>
 public partial class CameraFrame : Control
 {
-    public Vector2? LeaderFrom { get; set; }
-    public Vector2? LeaderTo { get; set; }
+    /// <summary>Leader lines from each open info card to its plant (card edge, plant).</summary>
+    public System.Collections.Generic.List<(Vector2 From, Vector2 To)> Leaders { get; } = new();
     public float HintHalfWidth { get; set; } = 160;
 
     public CameraFrame()
@@ -132,7 +132,7 @@ public partial class CameraFrame : Control
         float mid = s.X * .5f, y = s.Y - 41;
         DrawLine(new Vector2(mid - HintHalfWidth - 110, y), new Vector2(mid - HintHalfWidth - 14, y), ChamberStyle.GoldDim, 1);
         DrawLine(new Vector2(mid + HintHalfWidth + 14, y), new Vector2(mid + HintHalfWidth + 110, y), ChamberStyle.GoldDim, 1);
-        if (LeaderFrom is { } from && LeaderTo is { } to)
+        foreach (var (from, to) in Leaders)
         {
             DrawLine(from, to, ChamberStyle.Gold with { A = .8f }, 1.2f, true);
             DrawCircle(to, 3, ChamberStyle.Cream);

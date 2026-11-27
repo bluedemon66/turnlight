@@ -16,7 +16,20 @@
     "recoverDark": 63,
     "wiltMultiplier": 0.5,
     "stageDarkRelief": 0,
-    "ellipseBeam": true
+    "ellipseBeam": true,
+    "diagonalMove": true,
+    "leaveRemains": true,
+    "remainsDays": 3,
+    "harvestSeeds": 3,
+    "shovelCost": 0
+  },
+  "interface": {
+    "hoursPerDay": 24,
+    "autoCardsForLitPlants": true,
+    "closeCardsOnSpeedChange": true,
+    "stuckMessageSeconds": 1.5,
+    "messageSeconds": 2.3,
+    "nearWiltDarkness": 54
   },
   "levels": [
     { "number": 1, "durationSeconds": 120, "addedSeeds": 3, "lightRange": 2, "targetVitality": 105 }

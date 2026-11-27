@@ -23,7 +23,8 @@ public sealed record StageRule(double? GrowthToNext, double DarkPerSecond, doubl
 public sealed record GrowthRules(IReadOnlyList<StageRule> Stages, double LightGrowthPerSecond,
     double LightDarkPerSecond, double MoveSecondsPerSlot, double FirstSeedGrowth,
     double SeedGrowthIncrement, int SeedsPerHarvest, double RecoverDark, double WiltMultiplier,
-    double StageDarkRelief = 20, bool EllipseBeam = false)
+    double StageDarkRelief = 20, bool EllipseBeam = false, bool DiagonalMove = false,
+    bool LeaveRemains = false, int RemainsDays = 3, int HarvestSeeds = 3, int ShovelCost = 0)
 {
     internal void Validate()
     {
@@ -33,7 +34,8 @@ public sealed record GrowthRules(IReadOnlyList<StageRule> Stages, double LightGr
             !Positive(FirstSeedGrowth) || !double.IsFinite(SeedGrowthIncrement) ||
             SeedGrowthIncrement < 0 || SeedsPerHarvest <= 0 || !double.IsFinite(RecoverDark) ||
             RecoverDark < 0 || !double.IsFinite(WiltMultiplier) || WiltMultiplier is < 0 or > 1 ||
-            !double.IsFinite(StageDarkRelief) || StageDarkRelief < 0)
+            !double.IsFinite(StageDarkRelief) || StageDarkRelief < 0 || RemainsDays <= 0 ||
+            HarvestSeeds <= 0 || ShovelCost < 0)
             throw new ArgumentException("Invalid growth rules.");
         for (int i = 0; i < Stages.Count; i++)
         {
@@ -50,3 +52,10 @@ public sealed record GrowthRules(IReadOnlyList<StageRule> Stages, double LightGr
 
 public sealed record LevelPlant(GrowthStage Stage = GrowthStage.Seed, double Growth = 0,
     double Darkness = 0, bool Wilted = false, int SeedsProduced = 0);
+
+/// <summary>
+/// What is left in a pit after a plant withers to death (darkness reaches DieAt), when
+/// GrowthRules.LeaveRemains is on. Day is the day (level number) it died on; the remains go
+/// by themselves RemainsDays days later, or earlier with the shovel.
+/// </summary>
+public sealed record LevelRemains(GrowthStage Stage, int Day);

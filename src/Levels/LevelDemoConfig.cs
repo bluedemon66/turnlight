@@ -5,8 +5,23 @@ using OneBeam.Levels.Domain;
 
 namespace OneBeam.Levels;
 
-public sealed record LevelDemoConfig(int GridSize, GrowthRules Rules, LevelDefinition[] Levels)
+/// <summary>
+/// Interface switches for the camera-feed scene (data/camera-levels.json "interface").
+/// There is no settings menu yet, so the two card switches live here.
+/// </summary>
+public sealed record InterfaceSettings(
+    double HoursPerDay = 24,
+    bool AutoCardsForLitPlants = true,
+    bool CloseCardsOnSpeedChange = true,
+    double StuckMessageSeconds = 1.5,
+    double MessageSeconds = 2.3,
+    double NearWiltDarkness = 54);
+
+public sealed record LevelDemoConfig(int GridSize, GrowthRules Rules, LevelDefinition[] Levels,
+    InterfaceSettings? Interface = null)
 {
+    public InterfaceSettings Ui => Interface ?? new InterfaceSettings();
+
     private const string ConfigPath = "res://data/levels-demo.json";
 
     public static LevelDemoConfig Load(string path = ConfigPath)

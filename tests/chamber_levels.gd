@@ -26,7 +26,7 @@ func _run() -> void:
 	var seeds := hud.get_node("Seeds") as Button
 	if not _check(timer.text == "2:00" and score.text == "生机  0 / 105" and seeds.text == "种子 ×3", "level 1 starts with full clock, no vitality and three seeds"):
 		return
-	if not _check((hud.get_node("Level") as Label).text == "第 1 关" and not (hud.get_node("Cam") as Label).visible, "level 1 shows few camera clues"):
+	if not _check((hud.get_node("Level") as Label).text == "第 1 天" and not (hud.get_node("Cam") as Label).visible, "level 1 shows few camera clues"):
 		return
 	await _capture("01-start.png")
 
@@ -39,9 +39,10 @@ func _run() -> void:
 	if not _check(game.call("IsSlotLit", 0) and game.call("IsSlotLit", 1) and not game.call("IsSlotLit", 5), "the light starts on A1-B1"):
 		return
 	_click(game.call("CellScreen", 5))
-	var card := hud.get_node("Card") as Control
+	await _frames(1)
+	var card := hud.get_node_or_null("Cards/Card5") as Control
 	await _frames(2)
-	if not _check(card.visible and (hud.get_node("Card").find_child("CardTitle", true, false) as Label).text.begins_with("A2"), "clicking a plant opens its card"):
+	if not _check(card != null and card.visible and (card.find_child("CardTitle", true, false) as Label).text.begins_with("A2"), "clicking a plant opens its card"):
 		return
 	game.call("AdvanceForTest", 60.0)
 	await _frames(4)
@@ -66,7 +67,7 @@ func _run() -> void:
 	await _frames(3)
 	var result := hud.get_node("Result") as Control
 	var title := result.find_child("ResultTitle", true, false) as Label
-	if not _check(result.visible and title.text.begins_with("第 1 关"), "time up shows the result card"):
+	if not _check(result.visible and title.text.begins_with("第 1 天"), "time up shows the result card"):
 		return
 	await _capture("05-result.png")
 	print("PASS one-beam chamber levels UI")
