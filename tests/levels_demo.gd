@@ -21,7 +21,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	capture_dir = OS.get_environment("ONE_BEAM_LEVELS_CAPTURE")
-	var scene: String = ProjectSettings.get_setting("application/run/main_scene")
+	var scene := "res://scenes/LevelsDemo.tscn"
 	if not _check(change_scene_to_file(scene) == OK, "open configured demo"):
 		return
 	await scene_changed

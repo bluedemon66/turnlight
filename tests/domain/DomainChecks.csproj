@@ -11,5 +11,6 @@
     <Compile Include="../../src/Levels/Domain/**/*.cs" LinkBase="LevelsDomain" />
     <Compile Include="../../src/Persistence/**/*.cs" LinkBase="Persistence" />
     <None Include="../../data/levels-demo.json" Link="levels-demo.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../data/camera-levels.json" Link="camera-levels.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
